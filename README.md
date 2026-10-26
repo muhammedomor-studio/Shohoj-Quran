@@ -1,41 +1,19 @@
-# সহজ কোরআন (Shohoj Quran) — Android project
+# সহজ কোরআন — Offline download update
 
-এই প্রজেক্টে ডেটা GitHub-এ আলাদা করে হোস্ট করতে হয় না। অ্যাপটি অনলাইনে Al Quran Cloud-এর public REST API ব্যবহার করে:
+Android Java project. Uses Al Quran Cloud API for Arabic Quran and Bengali translation, and the ar.alafasy surah audio CDN for recitation.
 
-- Surah metadata: `https://api.alquran.cloud/v1/surah`
-- Arabic + Bengali translation: `https://api.alquran.cloud/v1/surah/{number}/editions/quran-uthmani,bn.bengali`
-- Arabic fallback: `https://api.alquran.cloud/v1/surah/{number}`
-- Mishary Alafasy surah audio: `https://cdn.islamic.network/quran/audio-surah/128/ar.alafasy/{number}.mp3`
+## New behavior
+- First launch shows a Bengali prompt explaining that downloaded data can be read offline.
+- User can start download or skip and download later from Settings.
+- Settings includes separate text/translation download and full text+114 audio download.
+- Downloaded surah JSON and MP3 files are saved in app-private internal storage; audio playback prefers local MP3 when present.
+- Download progress is shown. If the connection fails, already downloaded files remain and the user can retry.
 
-API docs: https://alquran.cloud/api
-Audio CDN docs: https://alquran.cloud/cdn
-
-## Features
-
-- Bengali UI and custom Shohoj Quran logo/splash screen
-- Home, Quran, Bookmarks, Settings and Donation pages
-- Light/dark theme saved on device
-- Surah search and animated up/down scroll controls
-- Surah reader retrieves Quran text online and caches opened surah JSON in app-private storage
-- Mishary Alafasy audio streaming
-- Donation guidance page (does not collect money)
-- GitHub source-code link in Settings
-- GitHub Actions workflow builds a debug APK
+## Build
+Upload the project contents to the root of your GitHub repository and run `.github/workflows/android-build.yml`.
 
 ## Important limitations
-
-- Network access is needed to fetch a surah the first time and to stream audio. Previously opened surahs may be available offline from the app cache. This is not a complete offline Quran download manager.
-- Audio is streamed, not downloaded for offline listening.
-- Bengali translation availability depends on the API edition `bn.bengali`; if that edition is unavailable, the app attempts to show Arabic text as a fallback.
-- The APK has not been built/tested in this environment because Android SDK/Gradle tooling is not installed here. Run GitHub Actions to verify the build before publishing.
-- API/CDN availability and terms can change; check the linked official documentation before public release.
-
-## Build APK with GitHub Actions
-
-1. Upload the *contents* of this ZIP (not the ZIP file itself) to the root of `muhammedomor-studio/Shohoj-Quran`.
-2. Commit to `main`.
-3. Open the repository's **Actions** tab.
-4. Run **Build Shohoj Quran APK** (or wait for a push-triggered run).
-5. Download the `shohoj-quran-debug-apk` artifact from the completed workflow run.
-
-Package: `com.shohojquran.app`
+- The full-audio option can use substantial mobile data and storage; use Wi-Fi and check free space first. Android internal app storage is used, so uninstalling the app removes downloaded data.
+- API/CDN availability, Bengali edition availability, and audio URLs depend on third-party services and may change. The app needs internet to download, but previously downloaded files can be used offline.
+- Build has not been verified in this environment because Android SDK/Gradle build tooling is not available here. Verify the GitHub Actions build and test on a real device before publishing.
+- Check the API/CDN terms and attribution requirements before public release.

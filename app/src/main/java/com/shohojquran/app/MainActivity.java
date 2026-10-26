@@ -76,8 +76,51 @@ public class MainActivity extends Activity {
         setContentView(splash);
         splash.animate().alpha(1f).setDuration(650).setInterpolator(new DecelerateInterpolator()).start();
         new Handler(Looper.getMainLooper()).postDelayed(() -> {
-            splash.animate().alpha(0f).setDuration(250).withEndAction(() -> showPage("home")).start();
+            splash.animate().alpha(0f).setDuration(250).withEndAction(() -> { showPage("home"); if (!prefs.getBoolean("welcome_download_prompt_seen", false)) showDownloadWelcome(); }).start();
         }, 1200);
+    }
+
+    private void showDownloadWelcome() {
+        prefs.edit().putBoolean("welcome_download_prompt_seen", true).apply();
+        new android.app.AlertDialog.Builder(this)
+            .setTitle("একবার ডাউনলোড করুন, অফলাইনে পড়ুন")
+            .setMessage("আরবি কুরআন ও বাংলা অনুবাদ ফোনে ডাউনলোড করে রাখলে পরে ইন্টারনেট ছাড়াই পড়তে পারবেন। অডিও আলাদাভাবে ডাউনলোড করা যাবে; সব অডিওতে অনেক স্টোরেজ লাগতে পারে। এখন ডাউনলোড শুরু করবেন, নাকি পরে সেটিংস থেকে করবেন?")
+            .setPositiveButton("ডাউনলোড শুরু করুন", (d,w) -> showDownloadOptions())
+            .setNegativeButton("এখন নয় / স্কিপ", (d,w) -> Toast.makeText(this,"পরে সেটিংস থেকে ডাউনলোড করতে পারবেন",Toast.LENGTH_LONG).show())
+            .setCancelable(true).show();
+    }
+    private void showDownloadOptions() {
+        String[] choices = {"কুরআন + বাংলা অনুবাদ (প্রস্তাবিত)", "কুরআন + বাংলা অনুবাদ + ১১৪টি অডিও (অনেক স্টোরেজ লাগবে)"};
+        new android.app.AlertDialog.Builder(this).setTitle("কী ডাউনলোড করবেন?")
+          .setItems(choices, (d,which) -> downloadAllData(which==1)).setNegativeButton("বাতিল",null).show();
+    }
+    private void downloadAllData(boolean withAudio) {
+        android.app.ProgressDialog progress = new android.app.ProgressDialog(this);
+        progress.setTitle("কুরআন ডেটা ডাউনলোড হচ্ছে"); progress.setMessage("প্রস্তুতি নিচ্ছে…"); progress.setProgressStyle(android.app.ProgressDialog.STYLE_HORIZONTAL); progress.setMax(withAudio?228:114); progress.setProgress(0); progress.setCancelable(false); progress.show();
+        new Thread(() -> {
+            int done=0; String error=null;
+            try {
+                for(int n=1;n<=114;n++) {
+                    File cached=new File(getFilesDir(), "surah-"+n+".json");
+                    JSONObject data;
+                    if(cached.exists()) data=readCachedSurah(n);
+                    else {
+                        String address=API+"/surah/"+n+"/editions/quran-uthmani,bn.bengali";
+                        JSONObject response=new JSONObject(new String(fetchBytes(address),StandardCharsets.UTF_8));
+                        if(response.optInt("code")!=200 || response.optJSONArray("data")==null) throw new Exception("সূরা "+n+" ডাউনলোড করা যায়নি");
+                        writeCachedSurah(n,response); data=response;
+                    }
+                    done++; int p=done; runOnUiThread(()->{progress.setProgress(p);progress.setMessage("সূরা ও অনুবাদ: "+p+"/114");});
+                    if(withAudio) {
+                        File audio=new File(getFilesDir(),"audio-surah-"+n+".mp3");
+                        if(!audio.exists()) { byte[] bytes=fetchBytes(AUDIO_CDN+n+".mp3"); try(FileOutputStream out=new FileOutputStream(audio)){out.write(bytes);} }
+                        done++; int ap=done; runOnUiThread(()->{progress.setProgress(ap);progress.setMessage("সূরা/অডিও: "+ap+"/228 — অডিও বড় হতে পারে");});
+                    }
+                }
+            } catch(Exception e) { error=e.getMessage()==null?"ডাউনলোড ব্যর্থ হয়েছে":e.getMessage(); }
+            final String err=error;
+            runOnUiThread(()->{progress.dismiss();loadDownloadedQuran();if(err==null) new android.app.AlertDialog.Builder(this).setTitle("ডাউনলোড সম্পন্ন").setMessage(withAudio?"কুরআন, বাংলা অনুবাদ ও অডিও ফোনে সংরক্ষিত হয়েছে।":"কুরআন ও বাংলা অনুবাদ ফোনে সংরক্ষিত হয়েছে। অডিও সেটিংস থেকে ডাউনলোড করতে পারবেন।").setPositiveButton("ঠিক আছে",null).show(); else new android.app.AlertDialog.Builder(this).setTitle("ডাউনলোড সম্পূর্ণ হয়নি").setMessage(err+"\nইন্টারনেট/স্টোরেজ পরীক্ষা করে সেটিংস থেকে আবার চেষ্টা করুন। আগে ডাউনলোড হওয়া ফাইল ফোনে থাকবে।").setPositiveButton("ঠিক আছে",null).show();});
+        }).start();
     }
 
     private void loadSurahs() {
@@ -313,8 +356,9 @@ public class MainActivity extends Activity {
             }
             if (mediaPlayer != null) { try { mediaPlayer.release(); } catch(Exception ignored){} }
             mediaPlayer = new MediaPlayer(); audioPrepared = false; audioPlaying = false;
+            File offlineAudio = new File(getFilesDir(), "audio-surah-"+number+".mp3");
             audioUrl = AUDIO_CDN + number + ".mp3";
-            mediaPlayer.setDataSource(audioUrl);
+            if (offlineAudio.exists()) mediaPlayer.setDataSource(offlineAudio.getAbsolutePath()); else mediaPlayer.setDataSource(audioUrl);
             mediaPlayer.setOnPreparedListener(player -> { audioPrepared = true; audioPlaying = true; player.start(); Toast.makeText(this,"তিলাওয়াত চলছে",Toast.LENGTH_SHORT).show(); if(currentPage.equals("reader")) showPage("reader"); });
             mediaPlayer.setOnCompletionListener(player -> { audioPlaying = false; audioPrepared = false; if(currentPage.equals("reader")) showPage("reader"); });
             mediaPlayer.setOnErrorListener((player,what,extra) -> { audioPlaying=false; audioPrepared=false; Toast.makeText(this,"অডিও চালানো যায়নি; ইন্টারনেট সংযোগ পরীক্ষা করুন",Toast.LENGTH_LONG).show(); return true; });
@@ -329,7 +373,7 @@ public class MainActivity extends Activity {
     private void showSettings() {
         content.addView(label("সেটিংস",24,fg,true));gap(content,4);content.addView(label("আপনার অভিজ্ঞতা নিজের মতো সাজিয়ে নিন",13,muted,false));gap(content,16);
         LinearLayout appearance=card();appearance.addView(label("চেহারা ও প্রদর্শন",16,fg,true));gap(appearance,8);appearance.addView(label("থিম",13,muted,false));gap(appearance,8);appearance.addView(actionButton(dark?"☀  লাইট মোড চালু করুন":"☾  ডার্ক মোড চালু করুন",()->{dark=!dark;prefs.edit().putBoolean("dark",dark).apply();showPage("settings");}));content.addView(appearance);gap(content,12);
-        LinearLayout data=card();data.addView(label("কুরআন ডেটা ও অনলাইন API",16,fg,true));gap(data,7);data.addView(label("সূরার আরবি পাঠ ও বাংলা অনুবাদ Al Quran Cloud API থেকে আনা হয়। আপনি যে সূরা খুলবেন, সেটি ফোনে ক্যাশ করা হবে; পরেরবার ইন্টারনেট না থাকলেও আগে দেখা সূরা খোলা যেতে পারে।",13,muted,false));gap(data,10);data.addView(actionButton("API ও ডেটার উৎস খুলুন  ↗",()->openUrl("https://alquran.cloud/api")));gap(data,7);data.addView(actionButton("অ্যাপের সোর্স কোড — GitHub",()->openUrl(REPO)));content.addView(data);gap(content,12);
+        LinearLayout data=card();data.addView(label("কুরআন ডেটা ও অনলাইন API",16,fg,true));gap(data,7);data.addView(label("সূরার আরবি পাঠ ও বাংলা অনুবাদ Al Quran Cloud API থেকে আনা হয়। আপনি যে সূরা খুলবেন, সেটি ফোনে ক্যাশ করা হবে; পরেরবার ইন্টারনেট না থাকলেও আগে দেখা সূরা খোলা যেতে পারে।",13,muted,false));gap(data,10);data.addView(actionButton("সব সূরা ও বাংলা অনুবাদ ডাউনলোড করুন",()->downloadAllData(false)));gap(data,7);data.addView(actionButton("সব সূরা + অডিও ডাউনলোড করুন",()->new android.app.AlertDialog.Builder(this).setTitle("বড় ডাউনলোড").setMessage("১১৪টি অডিও ডাউনলোডে অনেক ডেটা ও স্টোরেজ লাগতে পারে। Wi‑Fi এবং পর্যাপ্ত জায়গা থাকলে চালিয়ে যান।").setPositiveButton("চালিয়ে যান",(d,w)->downloadAllData(true)).setNegativeButton("বাতিল",null).show()));gap(data,7);data.addView(actionButton("API ও ডেটার উৎস খুলুন  ↗",()->openUrl("https://alquran.cloud/api")));gap(data,7);data.addView(actionButton("অ্যাপের সোর্স কোড — GitHub",()->openUrl(REPO)));content.addView(data);gap(content,12);
         LinearLayout links=card();links.addView(label("প্রজেক্ট ও অবদান",16,fg,true));gap(links,8);links.addView(actionButton("⌘  সোর্স কোড — GitHub",()->openUrl(REPO)));gap(links,7);links.addView(actionButton("♡  দান ও সহায়তা",()->showPage("donate")));gap(links,7);links.addView(actionButton("অ্যাপ সম্পর্কে",()->showAbout()));content.addView(links);gap(content,16);
         TextView ver=label("Shohoj Quran  •  Version 1.0.0\nসবার জন্য সহজ কোরআন পাঠ",12,muted,false);ver.setGravity(Gravity.CENTER);content.addView(ver);
     }
